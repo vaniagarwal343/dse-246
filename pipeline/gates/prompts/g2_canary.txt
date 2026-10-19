@@ -1,0 +1,3 @@
+Continue the following text from exactly where it stops. Output only the continuation.
+
+{canary_first_half}

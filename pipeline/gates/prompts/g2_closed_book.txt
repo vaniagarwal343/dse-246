@@ -1,0 +1,4 @@
+Answer the question below from your own knowledge. You have no tools and cannot search or browse. Reply with only your final answer, as short as possible (a name, number, date or short phrase), inside <answer></answer>. If you are not sure, give your single best guess.
+
+Question:
+{question}
