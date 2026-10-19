@@ -1,6 +1,6 @@
 """The study arms' tools inside the Codex CLI: a stdio MCP server exposing `search` and `fetch` over one backend (CONFIG.md §3).
 
-    python harness/mcp_search.py <arm> <run_dir> <purpose> <prompt_chars>
+    python harness/mcp_search.py <arm> <run_dir> <purpose> <prompt_tokens>
 
 Every arm gets the same two tools with the same names, descriptions and schemas (harness/arms.py). Each backend call goes
 through harness/net.py, so it is logged to results/requests.log, and each tool call adds one line to <run_dir>/tool_calls.jsonl.
@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from harness import arms  # noqa: E402
+from harness import arms, tokens  # noqa: E402
 from harness import net as harness_net  # noqa: E402
 from pipeline import config, env, net  # noqa: E402
 
@@ -25,11 +25,18 @@ BLOCKED = "BLOCKED_KEY_DOMAIN"
 UNAVAILABLE = "This URL is not available."
 # NOTE(vani): the CLI reports token usage once per run, not per request, so the server estimates the next model input: the CLI's
 # own instructions and tool definitions (BASE_TOKENS: a request with no tool call carried 9,289 to 9,292 input tokens on both
-# arms under amendment 2026-10-19-04's config), a token per three characters of the prompt and of every tool argument and result so far, and CALL_ALLOWANCE
-# per call for the model's own reasoning and messages.
+# arms under amendment 2026-10-19-04's config), the o200k_base tokens of the prompt and of every tool argument and result so far
+# (harness/tokens.py, amendment 2026-10-19-05; a character count undercounted CJK text), and CALL_ALLOWANCE per call for the model's
+# own reasoning and messages.
 BASE_TOKENS = 10_000
 CALL_ALLOWANCE = 1000
 TOOLS = [{"name": t["name"], "description": t["description"], "inputSchema": t["parameters"]} for t in (arms.SEARCH_TOOL, arms.FETCH_TOOL)]
+
+
+def failure(name, exc):
+    """What the model sees when a call fails: the same shape in every arm, naming neither backend (amendment 2026-10-19-05)."""
+    status = getattr(exc, "status", None)
+    return {"error": f"{name} failed" + (f" (HTTP {status})" if status else "")}
 
 
 class Blocked(Exception):
@@ -47,7 +54,7 @@ def drop_blocked(payload, meta):
 
 def trace(name, args, payload, meta, error):
     """The trace fields of one call: every search result as returned with its lengths, or the fetch's status, lengths and truncation."""
-    extra = {k: meta[k] for k in ("cost_dollars", "request_id", "query_sent", "blocked") if meta.get(k)}
+    extra = {k: meta[k] for k in ("cost_dollars", "request_id", "query_sent", "blocked", "http_status") if meta.get(k)}
     if name == "search":
         rows = payload or []
         backend = meta.get("backend_chars") or [None] * len(rows)
@@ -61,15 +68,15 @@ def trace(name, args, payload, meta, error):
 
 
 class Server:
-    def __init__(self, arm, run_dir, purpose, prompt_chars):
+    def __init__(self, arm, run_dir, purpose, prompt_tokens):
         self.arm, self.backend, self.purpose = arm, arms.ARMS[arm], purpose
         self.log_path = Path(run_dir) / "tool_calls.jsonl"
         self.client = harness_net.client(timeout=120.0)
         self.model = config.params(config.read())["MODEL_UNDER_TEST"]
-        self.calls, self.chars = 0, prompt_chars
+        self.calls, self.tokens = 0, prompt_tokens
 
     def estimate(self):
-        return BASE_TOKENS + self.chars // 3 + CALL_ALLOWANCE * self.calls
+        return BASE_TOKENS + self.tokens + CALL_ALLOWANCE * self.calls
 
     def log(self, rec):
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -103,10 +110,10 @@ class Server:
             text, ok, error = json.dumps(payload, ensure_ascii=False), True, None
         except Blocked as exc:  # NOTE(vani): the model is told only that the page is unavailable; the trace keeps the rule.
             text, ok, error, payload, meta = json.dumps({"error": UNAVAILABLE}), False, f"{BLOCKED}: {exc}", None, {}
-        except Exception as exc:  # NOTE(vani): a failed backend call goes back to the model as that tool's output, and is logged.
+        except Exception as exc:  # NOTE(vani): a failed backend call goes back to the model as failure(), and the trace keeps the backend's error.
             error = env.scrub(f"{type(exc).__name__}: {exc}")[:300]
-            text, ok, payload, meta = json.dumps({"error": error}), False, None, {}
-        self.chars += len(json.dumps(args, ensure_ascii=False)) + len(text)
+            text, ok, payload, meta = json.dumps(failure(name, exc)), False, None, {"http_status": getattr(exc, "status", None)}
+        self.tokens += tokens.count(json.dumps(args, ensure_ascii=False)) + tokens.count(text)
         self.log({**rec, "n": self.calls, "ok": ok, "error": error, "elapsed_ms": round(1000 * (time.monotonic() - started)),
                   "returned_chars": len(text), **trace(name, args, payload, meta, error)})
         return {"content": [{"type": "text", "text": text}], "isError": not ok}
@@ -146,5 +153,5 @@ class Server:
 
 
 if __name__ == "__main__":
-    arm, run_dir, purpose, prompt_chars = sys.argv[1:5]
-    Server(arm, run_dir, purpose, int(prompt_chars)).serve()
+    arm, run_dir, purpose, prompt_tokens = sys.argv[1:5]
+    Server(arm, run_dir, purpose, int(prompt_tokens)).serve()

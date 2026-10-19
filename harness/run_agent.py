@@ -8,6 +8,11 @@ attempt gets trace.json: every tool call in order with each search result's URL,
 each fetch's URL, status, lengths and truncation; cap and ceiling refusals; Codex usage and rate-limit snapshot; the final
 message, its Exact Answer line and wall time. An attempt with a trace.json never runs again. A usage or rate limit stops
 new attempts, and an attempt it interrupted resumes on the next run with its try count kept.
+
+Every trace and main_runs.jsonl row carries the commit of the code that ran it, the normalized config.toml hash, and the
+isolation evidence (mcp_catalogs, foreign_items); the runner refuses to start on uncommitted code. As the attempts outside the
+pilot tasks pass 25, 50, 75 and 100 percent, harness/report.py writes results/progress_<pct>.md: operational counts and costs,
+no scores (amendment 2026-10-19-05). Jobs are queued task by task, both arms' attempts together, so the arms stay interleaved.
 """
 import argparse
 import concurrent.futures as cf
@@ -18,7 +23,7 @@ import sys
 import threading
 import time
 
-from harness import arms, codex_arm, judge
+from harness import arms, codex_arm, judge, report
 from pipeline import config, net
 
 ATTEMPTS = 2
@@ -31,6 +36,8 @@ RUNS = config.ROOT / "results" / "main"
 LOG = config.ROOT / "results" / "main_runs.jsonl"
 LOCK = threading.Lock()
 STOP = threading.Event()
+ROW_FIELDS = ("created_at", "config_hash", "code_commit", "stage", "model", "task_id", "block", "arm", "attempt", "status", "retries",
+              "exact_answer", "wall_s", "usage", "summary", "config_template_sha256", "mcp_catalogs", "foreign_items", "max_request_input_tokens")
 
 
 def preflight():
@@ -38,6 +45,7 @@ def preflight():
     tags = subprocess.run(["git", "-C", str(config.ROOT), "tag", "--list", "freeze-*"], capture_output=True, text=True).stdout.split()
     if not tags:
         raise SystemExit("no freeze tag: the main run starts only after the freeze (AGENTS.md, C5)")
+    config.code_commit()
     data = json.loads(TASKS.read_text(encoding="utf-8"))
     if data["config_hash"] != config.config_hash(config.read()):
         raise SystemExit("tasks/tasks.json was written under another config_hash")
@@ -130,16 +138,19 @@ def run_attempt(task, arm, k, template):
     timed_out = rec["timed_out"]
     final = rec["final_text"] if status == "completed" else ""
     calls = tool_calls(run_dir)
-    trace = {"created_at": net.utc_now(), "config_hash": config.config_hash(config.read()), "stage": "arm", "model": rec["model"],
+    trace = {"created_at": net.utc_now(), "config_hash": config.config_hash(config.read()), "code_commit": rec.get("code_commit"), "stage": "arm", "model": rec["model"],
              "task_id": task["task_id"], "block": task["block"], "arm": arm, "attempt": k, "status": status, "timed_out": timed_out, "retries": last_try,
              "tries": tries, "codex_version": rec["codex_version"], "template_sha256": PROMPT_SHA256,
              "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(), "final_text": final,
              "exact_answer_line": exact_line(final), "exact_answer": judge.extract_exact_answer(final),
              "wall_s": rec["elapsed_s"], "wall_s_this_run": round(time.monotonic() - started, 1), "usage": rec["usage"],
-             "rate_limits": rec["rate_limits"], "summary": summarize(calls), "tool_calls": calls}
+             "rate_limits": rec["rate_limits"], "summary": summarize(calls), "config_template_sha256": rec.get("config_template_sha256"),
+             "mcp_catalogs": rec["mcp_catalogs"], "foreign_items": rec["foreign_items"], "max_request_input_tokens": rec.get("max_request_input_tokens"),
+             "tool_calls": calls}
     (adir / "trace.json").write_text(json.dumps(trace, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
-    append({f: trace[f] for f in ("created_at", "config_hash", "stage", "model", "task_id", "block", "arm", "attempt", "status",
-                                  "retries", "exact_answer", "wall_s", "usage", "summary")})
+    append({f: trace[f] for f in ROW_FIELDS})
+    with LOCK:
+        report.progress()
     s = trace["summary"]
     print(f"  {task['task_id']} {arm} a{k}: {status}, {s['calls']} calls ({s['searches']} search, {s['fetches']} fetch), "
           f"{trace['wall_s']}s, answer {trace['exact_answer']!r}", file=sys.stderr)

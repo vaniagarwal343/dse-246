@@ -16,7 +16,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from harness import arms
+from harness import arms, tokens
 from pipeline import config, env, net
 
 CODEX_VERSION = "codex-cli 0.162.1"
@@ -31,7 +31,10 @@ FEATURES_OFF = ("apps", "plugins", "remote_plugin", "plugin_sharing", "tool_sugg
                 "goals", "hooks", "sleep_tool")
 CATALOG_RE = re.compile(r'MCP binding catalog materialized.*?server_kind="([^"]*)".*?tool_count=(\d+)')
 OWN_ITEMS = ("agent_message", "reasoning")
-LIMIT_RE = re.compile(r"rate.?limit|usage limit|too many requests|\b429\b|quota|credits", re.I)
+LIMIT_RE = re.compile(r"rate.?limit|usage limit|too many requests|status(=| )429|quota", re.I)
+# NOTE(vani): RUST_LOG=info stderr also carries tool-result text, so only ERROR/WARN lines and error events count as limit messages.
+LEVEL_RE = re.compile(r"\b(ERROR|WARN)\b")
+REQUEST_RE = re.compile(r"event\.kind=response\.completed input_token_count=(\d+)")
 CONFIG_TOML = """model = "{model}"
 model_reasoning_effort = "{effort}"
 approval_policy = "never"
@@ -58,12 +61,22 @@ def version():
     return out.splitlines()[0] if out else None
 
 
+def config_text(arm, run_dir, purpose, prompt_tokens):
+    model = config.params(config.read())["MODEL_UNDER_TEST"]
+    args = [str(config.ROOT / "harness" / "mcp_search.py"), arm, str(run_dir), purpose, str(prompt_tokens)]
+    return CONFIG_TOML.format(model=model, effort=arms.REASONING_EFFORT, python=json.dumps(sys.executable), args=json.dumps(args),
+                              features="\n".join(f"{name} = false" for name in FEATURES_OFF))
+
+
+def template_sha256():
+    """sha256 of config.toml with the per-attempt arguments (arm, run_dir, purpose, prompt tokens) as placeholders: the same in every
+    attempt of both arms, where the generated file's own hash differs per attempt (amendment 2026-10-19-05)."""
+    return hashlib.sha256(config_text("{arm}", "{run_dir}", "{purpose}", "{prompt_tokens}").encode()).hexdigest()
+
+
 def home(work, arm, run_dir, purpose, prompt):
     """Write CODEX_HOME's config.toml and login copy; returns the config text."""
-    model = config.params(config.read())["MODEL_UNDER_TEST"]
-    args = [str(config.ROOT / "harness" / "mcp_search.py"), arm, str(run_dir), purpose, str(len(prompt))]
-    text = CONFIG_TOML.format(model=model, effort=arms.REASONING_EFFORT, python=json.dumps(sys.executable), args=json.dumps(args),
-                              features="\n".join(f"{name} = false" for name in FEATURES_OFF))
+    text = config_text(arm, run_dir, purpose, tokens.count(prompt))
     (work / "codex-home").mkdir()
     (work / "codex-home" / "config.toml").write_text(text, encoding="utf-8")
     shutil.copyfile(AUTH, work / "codex-home" / "auth.json")
@@ -126,8 +139,9 @@ def foreign(evs):
 
 
 def limit_messages(evs, err):
-    """Error events and stderr lines that mention a rate limit, usage limit or quota."""
-    texts = [json.dumps(e) for e in evs if e.get("type") in ("error", "turn.failed")] + (err or "").splitlines()
+    """Error events, and ERROR or WARN lines on stderr, that mention a rate limit, usage limit or quota."""
+    lines = [l for l in re.sub(r"\x1b\[[0-9;]*m", "", err or "").splitlines() if LEVEL_RE.search(l)]
+    texts = [json.dumps(e) for e in evs if e.get("type") in ("error", "turn.failed")] + lines
     return [env.scrub(t)[:300] for t in texts if LIMIT_RE.search(t)]
 
 
@@ -135,6 +149,7 @@ def run(arm, prompt, run_dir, purpose, timeout=TIMEOUT):
     """One attempt: returns the run record, with the final message in "final_text"."""
     if version() != CODEX_VERSION:
         raise SystemExit(f"codex --version is {version()!r}; CONFIG.md §3 pins {CODEX_VERSION}")
+    commit = config.code_commit()
     model = config.params(config.read())["MODEL_UNDER_TEST"]
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -169,12 +184,14 @@ def run(arm, prompt, run_dir, purpose, timeout=TIMEOUT):
     (run_dir / "codex_stdout.log").write_text(env.scrub(out or ""), encoding="utf-8")
     (run_dir / "stderr.txt").write_text(env.scrub(err or ""), encoding="utf-8")
     record = {"created_at": created, "config_hash": config.config_hash(config.read()), "stage": "arm", "model": model, "arm": arm,
-              "purpose": purpose, "codex_version": CODEX_VERSION, "config_toml_sha256": hashlib.sha256(toml.encode()).hexdigest(),
+              "purpose": purpose, "code_commit": commit, "codex_version": CODEX_VERSION, "config_toml_sha256": hashlib.sha256(toml.encode()).hexdigest(),
+              "config_template_sha256": template_sha256(),
               "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(), "returncode": rc, "timed_out": timed_out,
               "elapsed_s": round(time.monotonic() - started, 1), "final_text": final, "usage": usage,
               "tool_calls": sum(1 for c in calls if "n" in c), "refused_calls": sum(1 for c in calls if c.get("refused")),
               "web_search_events": sum(1 for e in evs if "web_search" in json.dumps(e)),
               "errors": [env.scrub(json.dumps(e))[:300] for e in evs if e.get("type") in ("error", "turn.failed")],
-              "limit_messages": limit_messages(evs, err), "rate_limits": snapshot, "mcp_catalogs": catalogs(err), "foreign_items": foreign(evs)}
+              "limit_messages": limit_messages(evs, err), "rate_limits": snapshot, "mcp_catalogs": catalogs(err), "foreign_items": foreign(evs),
+              "max_request_input_tokens": max((int(n) for n in REQUEST_RE.findall(err or "")), default=None)}
     (run_dir / "attempt.json").write_text(json.dumps(record, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     return record

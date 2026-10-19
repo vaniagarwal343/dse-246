@@ -5,7 +5,16 @@ that matches gold after normalize() is correct without judges. Any other answer 
 and answer only) and independent. If they agree, that is the verdict; if they disagree, the attempt waits in
 results/owner_queue.jsonl until the owner's decision is logged in results/owner_decisions.jsonl. Verdicts are cached by
 attempt and answer, so a rerun asks only for what is missing. results/grades.jsonl is rewritten on every run.
+
+Owner decisions have a kind (amendment 2026-10-19-05). `judges_disagree` settles an attempt whose judges split and nothing else.
+`contested_gold` is the owner's adjudication that a task's gold is wrong or admits this answer (harness/contested.py); it is the
+only decision that overrides judges who agree, or an exact match. `final_as_frozen` keeps every grade as the frozen gold gives it. The owner's calibration verdicts (harness/calibration.py) never change a grade.
+Every grade, verdict and decision carries the commit of the code that produced it.
+
+    python -m harness.grade
+    python -m harness.grade --decide <task_id> <arm> <attempt> correct|incorrect --kind judges_disagree|contested_gold --reason "..."
 """
+import argparse
 import calendar
 import datetime as dt
 import decimal
@@ -38,6 +47,8 @@ LIST_SPLIT_RE = re.compile(r"\s*;\s*|,(?=\s)\s*|(?<!\d),\s*|,(?!\d)\s*|\s+(?:and
 DATE_FORMATS = (
     re.compile(r"(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})"),
     re.compile(r"(?P<y>\d{4})-(?P<m>\d{2})"),
+    re.compile(r"(?P<y>\d{4})/(?P<m>\d{1,2})/(?P<d>\d{1,2})"),
+    re.compile(r"(?P<y>\d{4})/(?P<m>\d{1,2})"),
     re.compile(r"(?P<mon>[a-z]+)\.? (?P<d>\d{1,2})(?:st|nd|rd|th)?,? (?P<y>\d{4})"),
     re.compile(r"(?P<d>\d{1,2})(?:st|nd|rd|th)? (?P<mon>[a-z]+)\.?,? (?P<y>\d{4})"),
     re.compile(r"(?P<mon>[a-z]+)\.?,? (?P<y>\d{4})"),
@@ -115,15 +126,44 @@ def answer_sha(answer):
 
 
 def traces():
-    return sorted(json.loads(p.read_text(encoding="utf-8")) for p in RUNS.glob("*/*/attempt_*/trace.json"))
+    return sorted((json.loads(p.read_text(encoding="utf-8")) for p in RUNS.glob("*/*/attempt_*/trace.json")),
+                  key=lambda t: (t["task_id"], t["arm"], t["attempt"]))
+
+
+DECISION_KINDS = ("judges_disagree", "contested_gold")
+
+
+def decide(task_id, arm, attempt, verdict, kind, reason):
+    """Log one owner decision for an attempt's current answer."""
+    path = RUNS / task_id / arm / f"attempt_{attempt}" / "trace.json"
+    if not path.exists():
+        raise SystemExit(f"no trace for {task_id} {arm} attempt {attempt}")
+    tr = json.loads(path.read_text(encoding="utf-8"))
+    rec = {"created_at": net.utc_now(), "config_hash": config.config_hash(config.read()), "code_commit": config.code_commit(), "stage": "owner",
+           "task_id": task_id, "arm": arm, "attempt": attempt, "answer_sha256": answer_sha(tr["exact_answer"]), "verdict": verdict, "kind": kind, "reason": reason}
+    append(DECISIONS, rec)
+    print(f"logged {kind} decision: {task_id} {arm} a{attempt} {verdict}")
+    return 0
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--decide", nargs=4, metavar=("TASK_ID", "ARM", "ATTEMPT", "VERDICT"))
+    ap.add_argument("--kind", choices=DECISION_KINDS)
+    ap.add_argument("--reason")
+    args = ap.parse_args()
+    if args.decide:
+        task_id, arm, attempt, verdict = args.decide
+        if verdict not in ("correct", "incorrect") or not args.kind or not args.reason:
+            raise SystemExit("--decide needs a verdict of correct or incorrect, a --kind and a --reason")
+        return decide(task_id, arm, int(attempt), verdict, args.kind, args.reason)
+    commit = config.code_commit()
     digest = config.config_hash(config.read())
     tasks = {t["task_id"]: t for t in json.loads(TASKS.read_text(encoding="utf-8"))["tasks"]}
     client = harness_net.client(timeout=120.0)
     verdicts = {(v["task_id"], v["arm"], v["attempt"], v["model"], v["answer_sha256"]): v for v in rows(VERDICTS) if v.get("error") is None}
-    decisions = {(d["task_id"], d["arm"], d["attempt"], d["answer_sha256"]): d for d in rows(DECISIONS)}
+    decisions = {(d["task_id"], d["arm"], d["attempt"], d["answer_sha256"]): d for d in rows(DECISIONS) if d.get("kind", "judges_disagree") == "judges_disagree"}
+    contested = {(d["task_id"], d["arm"], d["attempt"], d["answer_sha256"]): d for d in rows(DECISIONS) if d.get("kind") == "contested_gold"}
     queued = {(q["task_id"], q["arm"], q["attempt"], q["answer_sha256"]) for q in rows(QUEUE)}
     grades = []
     for tr in traces():
@@ -132,7 +172,7 @@ def main():
         task = tasks[tr["task_id"]]
         key = (tr["task_id"], tr["arm"], tr["attempt"])
         answer, sha = tr["exact_answer"], answer_sha(tr["exact_answer"])
-        out = {"created_at": net.utc_now(), "config_hash": digest, "task_id": tr["task_id"], "block": task["block"], "arm": tr["arm"],
+        out = {"created_at": net.utc_now(), "config_hash": digest, "code_commit": commit, "task_id": tr["task_id"], "block": task["block"], "arm": tr["arm"],
                "attempt": tr["attempt"], "answer": answer, "answer_sha256": sha, "judges": {}, "owner": None}
         if answer is None:
             out.update(method="NO_ANSWER_LINE", final="incorrect")
@@ -141,7 +181,7 @@ def main():
         else:
             for name, fn in judge.JUDGES.items():
                 if (*key, name, sha) not in verdicts:
-                    rec = {"created_at": net.utc_now(), "config_hash": digest, "stage": "judge", "model": name, "task_id": tr["task_id"],
+                    rec = {"created_at": net.utc_now(), "config_hash": digest, "code_commit": commit, "stage": "judge", "model": name, "task_id": tr["task_id"],
                            "arm": tr["arm"], "attempt": tr["attempt"], "answer_sha256": sha}
                     try:
                         v = fn(client, task["question"], task["gold"], answer, purpose=f"main:judge:{tr['task_id']}:{tr['arm']}:a{tr['attempt']}")
@@ -166,6 +206,10 @@ def main():
                     append(QUEUE, {"created_at": net.utc_now(), "config_hash": digest, "task_id": tr["task_id"], "arm": tr["arm"],
                                    "attempt": tr["attempt"], "answer_sha256": sha, "answer": answer, "judges": out["judges"]})
                     queued.add((*key, sha))
+        out["final_as_frozen"] = out["final"]
+        if answer is not None and (*key, sha) in contested:
+            ruling = contested[(*key, sha)]
+            out.update(method=f"owner: contested gold (was {out['method']}, {out['final']})", final=ruling["verdict"], owner=ruling["verdict"])
         grades.append(out)
     GRADES.write_text("".join(json.dumps(g, ensure_ascii=False) + "\n" for g in grades), encoding="utf-8")
     for arm in sorted({g["arm"] for g in grades}):

@@ -7,11 +7,14 @@ import argparse
 import datetime as dt
 import hashlib
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "CONFIG.md"
+# NOTE(vani): the code a record's code_commit vouches for (amendment 2026-10-19-05); outputs under pipeline/ are gitignored or not code.
+CODE_PATHS = ("harness", "pipeline/*.py", "pipeline/gates", "pipeline/sources", "pipeline/draft", "tests", "scripts", "Makefile", "requirements.txt")
 
 STAMP_RE = re.compile(r"^config_hash: sha256:(\S+)$", re.M)
 SECTION1_RE = re.compile(r"^## 1\.[^\n]*\n(.*?)(?=^## |\Z)", re.M | re.S)
@@ -38,6 +41,15 @@ def section1(text):
 
 def config_hash(text):
     return hashlib.sha256(section1(text).encode("utf-8")).hexdigest()
+
+
+def code_commit():
+    """HEAD's commit sha, refusing when any file under CODE_PATHS differs from it: a record names the commit of the code that produced it."""
+    git = ["git", "-C", str(ROOT)]
+    dirty = subprocess.run([*git, "status", "--porcelain", "--", *CODE_PATHS], capture_output=True, text=True, check=True).stdout.strip()
+    if dirty:
+        raise SystemExit(f"uncommitted code, so no record can name its commit; commit first:\n{dirty}")
+    return subprocess.run([*git, "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
 
 
 def stamped_hash(text):

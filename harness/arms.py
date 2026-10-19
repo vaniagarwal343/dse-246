@@ -4,6 +4,7 @@
 The settings below are CONFIG.md §3's: reasoning effort, results and characters per search, characters per fetch, the
 call cap and the input-token ceiling. Every arm exposes the same two tools with the same names and descriptions.
 """
+import json
 import re
 
 from pipeline import env
@@ -18,13 +19,15 @@ CALL_CAP = 60
 INPUT_CEILING = 250_000
 QUERY_CAP = 128
 # NOTE(vani): pages that hold the answer key (amendment 2026-10-19-03): either paper by arXiv id on any mirror, anything named
-# after either benchmark (the HF dataset pages, the project page, title-slug mirrors), and a GitHub repo hosting LBC records.
+# after either benchmark (the HF dataset pages, the project page, title-slug mirrors), and the owner's earlier benchmarks in this
+# series, lbc-30 (hosts LBC records) and astra-26 (amendment 2026-10-19-05).
 BLOCKLIST = (
     ("arXiv 2605.28721 (LiveBrowseComp paper)", re.compile(r"2605\.28721")),
     ("arXiv 2606.13120 (EvoBrowseComp paper)", re.compile(r"2606\.13120")),
     ("named after LiveBrowseComp", re.compile(r"livebrowsecomp", re.I)),
     ("named after EvoBrowseComp", re.compile(r"evobrow(se)?comp", re.I)),
     ("lbc-30 repo (hosts LiveBrowseComp records)", re.compile(r"(github\.com|githubusercontent\.com)/vaniagarwal343/lbc-30\b", re.I)),
+    ("astra-26 repo (earlier benchmark in this series)", re.compile(r"(github\.com|githubusercontent\.com)/vaniagarwal343/astra-26\b", re.I)),
 )
 
 SEARCH_TOOL = {
@@ -47,7 +50,11 @@ def blocked(url):
 
 
 class ArmError(Exception):
-    """A study-arm request failed; the message carries the provider's error text with keys scrubbed."""
+    """A study-arm request failed; the message carries the provider's error text with keys scrubbed, `status` its HTTP status."""
+
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 def ok_json(resp, what):
@@ -57,7 +64,7 @@ def ok_json(resp, what):
         message = resp.json().get("error", {}).get("message") or resp.text
     except ValueError:
         message = resp.text
-    raise ArmError(env.scrub(f"{what}: HTTP {resp.status_code} {str(message)[:300]}"))
+    raise ArmError(env.scrub(f"{what}: HTTP {resp.status_code} {str(message)[:300]}"), resp.status_code)
 
 
 # NOTE(vani): each backend returns (payload, meta). The payload is exactly what the model sees; meta goes only to the trace,
@@ -79,6 +86,11 @@ def exa_fetch(client, args, purpose):
     data = ok_json(client.request("POST", f"{EXA_URL}/contents", purpose=purpose, body=body, headers={"x-api-key": env.get("EXA_API_KEY")}), "Exa contents")
     page = (data.get("results") or [{}])[0]
     status = (data.get("statuses") or [{}])[0]
+    # NOTE(vani): Exa answers a page it cannot fetch with HTTP 200 and an error status; DeepSeek answers it with an HTTP error. Both
+    # become an ArmError, so the model sees the same failure in both arms (amendment 2026-10-19-05).
+    if status.get("status") != "success":
+        error = status.get("error") or {}
+        raise ArmError(env.scrub(f"Exa contents: {status.get('status')} {json.dumps(error)[:300]}"), error.get("httpStatusCode"))
     text = page.get("text") or ""
     payload = {"title": page.get("title"), "url": page.get("url") or args["url"], "text": text[:PAGE_TEXT]}
     meta = {"status": status.get("status"), "source": status.get("source"), "error": status.get("error"), "backend_chars": len(text),
