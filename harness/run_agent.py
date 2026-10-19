@@ -81,6 +81,15 @@ def failed_try(rec):
     return rec["returncode"] != 0 or (not rec["final_text"].strip() and bool(rec["errors"] or rec["limit_messages"]))
 
 
+def isolation_breach(rec):
+    """Why an attempt could reach more than the arm's MCP server, or None: another MCP catalog, a missing own catalog, or a foreign item."""
+    if rec["mcp_catalogs"] != [("configured", 2)]:
+        return f"MCP catalogs {rec['mcp_catalogs']}, expected only the arm's own (configured, 2 tools)"
+    if rec["foreign_items"]:
+        return f"items outside the arm's tools: {rec['foreign_items'][:3]}"
+    return None
+
+
 def append(rec):
     with LOCK:
         with LOG.open("a", encoding="utf-8") as fh:
@@ -102,6 +111,11 @@ def run_attempt(task, arm, k, template):
         if STOP.is_set():
             return None
         rec = codex_arm.run(arm, prompt, adir / f"try_{j}", f"main:{task['task_id']}:{arm}:a{k}:t{j}")
+        breach = isolation_breach(rec)
+        if breach:
+            STOP.set()
+            print(f"STOP: {task['task_id']} {arm} a{k} t{j} broke the arm's isolation, so it is not scored: {breach}", file=sys.stderr)
+            return None
         if not failed_try(rec):
             break
         if rec["limit_messages"]:

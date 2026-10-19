@@ -24,10 +24,10 @@ FORCED = "No more tool calls: {why}. Give your final answer now, in the format t
 BLOCKED = "BLOCKED_KEY_DOMAIN"
 UNAVAILABLE = "This URL is not available."
 # NOTE(vani): the CLI reports token usage once per run, not per request, so the server estimates the next model input: the CLI's
-# own instructions and tool definitions (BASE_TOKENS: a request with no tool call carried 11,869 to 11,872 input tokens on both
-# arms, 2026-10-19), a token per three characters of the prompt and of every tool argument and result so far, and CALL_ALLOWANCE
+# own instructions and tool definitions (BASE_TOKENS: a request with no tool call carried 9,289 to 9,292 input tokens on both
+# arms under amendment 2026-10-19-04's config), a token per three characters of the prompt and of every tool argument and result so far, and CALL_ALLOWANCE
 # per call for the model's own reasoning and messages.
-BASE_TOKENS = 12_000
+BASE_TOKENS = 10_000
 CALL_ALLOWANCE = 1000
 TOOLS = [{"name": t["name"], "description": t["description"], "inputSchema": t["parameters"]} for t in (arms.SEARCH_TOOL, arms.FETCH_TOOL)]
 

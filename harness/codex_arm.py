@@ -23,6 +23,14 @@ CODEX_VERSION = "codex-cli 0.162.1"
 TIMEOUT = 3600
 AUTH = Path.home() / ".codex" / "auth.json"
 UNSET = ("OPENAI_API_KEY", "CODEX_API_KEY")
+# NOTE(vani): Codex features that add tools or paths beyond the arm's MCP server (amendment 2026-10-19-04). `apps` alone adds the
+# codex_apps catalog of 180 tools, among them ChatGPT's own web search; the shell tools could read any file on this disk.
+FEATURES_OFF = ("apps", "plugins", "remote_plugin", "plugin_sharing", "tool_suggest", "skill_search", "skill_mcp_dependency_install",
+                "browser_use", "browser_use_external", "browser_use_full_cdp_access", "browser_annotation_api", "in_app_browser", "computer_use",
+                "image_generation", "view_image", "shell_tool", "unified_exec", "unified_exec_tty", "shell_snapshot", "multi_agent",
+                "goals", "hooks", "sleep_tool")
+CATALOG_RE = re.compile(r'MCP binding catalog materialized.*?server_kind="([^"]*)".*?tool_count=(\d+)')
+OWN_ITEMS = ("agent_message", "reasoning")
 LIMIT_RE = re.compile(r"rate.?limit|usage limit|too many requests|\b429\b|quota|credits", re.I)
 CONFIG_TOML = """model = "{model}"
 model_reasoning_effort = "{effort}"
@@ -39,6 +47,9 @@ args = {args}
 default_tools_approval_mode = "approve"
 tool_timeout_sec = 180
 startup_timeout_sec = 60
+
+[features]
+{features}
 """
 
 
@@ -51,7 +62,8 @@ def home(work, arm, run_dir, purpose, prompt):
     """Write CODEX_HOME's config.toml and login copy; returns the config text."""
     model = config.params(config.read())["MODEL_UNDER_TEST"]
     args = [str(config.ROOT / "harness" / "mcp_search.py"), arm, str(run_dir), purpose, str(len(prompt))]
-    text = CONFIG_TOML.format(model=model, effort=arms.REASONING_EFFORT, python=json.dumps(sys.executable), args=json.dumps(args))
+    text = CONFIG_TOML.format(model=model, effort=arms.REASONING_EFFORT, python=json.dumps(sys.executable), args=json.dumps(args),
+                              features="\n".join(f"{name} = false" for name in FEATURES_OFF))
     (work / "codex-home").mkdir()
     (work / "codex-home" / "config.toml").write_text(text, encoding="utf-8")
     shutil.copyfile(AUTH, work / "codex-home" / "auth.json")
@@ -95,6 +107,24 @@ def find_key(obj, key):
             yield from find_key(v, key)
 
 
+def catalogs(err):
+    """Every MCP tool catalog Codex built, from its RUST_LOG=info stderr, as [(server kind, tool count)]; the arm's own is ("configured", 2)."""
+    return sorted(set((kind, int(n)) for kind, n in CATALOG_RE.findall(re.sub(r"\x1b\[[0-9;]*m", "", err or ""))))
+
+
+def foreign(evs):
+    """Items other than the model's own messages and calls to the arm's `search` server: any such item breaks the arm's isolation."""
+    out = []
+    for e in evs:
+        it = e.get("item") or {}
+        if e.get("type") != "item.completed" or it.get("type") in OWN_ITEMS:
+            continue
+        if it.get("type") == "mcp_tool_call" and it.get("server") == "search":
+            continue
+        out.append(f"{it.get('type')}: {it.get('server') or ''}/{it.get('tool') or it.get('command') or ''}"[:200])
+    return out
+
+
 def limit_messages(evs, err):
     """Error events and stderr lines that mention a rate limit, usage limit or quota."""
     texts = [json.dumps(e) for e in evs if e.get("type") in ("error", "turn.failed")] + (err or "").splitlines()
@@ -114,8 +144,10 @@ def run(arm, prompt, run_dir, purpose, timeout=TIMEOUT):
         cmd = ["codex", "exec", "-m", model, "--sandbox", "read-only", "-c", 'approval_policy="never"',
                "-c", f'model_reasoning_effort="{arms.REASONING_EFFORT}"', "--strict-config", "--skip-git-repo-check",
                "--cd", str(work), "--json", "-o", str(work / "last_message.txt"), prompt]
+        # NOTE(vani): HOME is the empty workdir, so nothing from the owner's home (skills, config) reaches the arm; RUST_LOG=info makes
+        # Codex log each MCP catalog it builds, which the record keeps as proof of what the model could call.
         child_env = {k: v for k, v in os.environ.items() if k not in UNSET}
-        child_env["CODEX_HOME"] = str(work / "codex-home")
+        child_env.update(CODEX_HOME=str(work / "codex-home"), HOME=str(work), RUST_LOG="info")
         created, started = net.utc_now(), time.monotonic()
         try:
             # NOTE(vani): stdin must be closed: `codex exec` appends piped stdin to the prompt and waits for EOF when it is not a TTY.
@@ -143,6 +175,6 @@ def run(arm, prompt, run_dir, purpose, timeout=TIMEOUT):
               "tool_calls": sum(1 for c in calls if "n" in c), "refused_calls": sum(1 for c in calls if c.get("refused")),
               "web_search_events": sum(1 for e in evs if "web_search" in json.dumps(e)),
               "errors": [env.scrub(json.dumps(e))[:300] for e in evs if e.get("type") in ("error", "turn.failed")],
-              "limit_messages": limit_messages(evs, err), "rate_limits": snapshot}
+              "limit_messages": limit_messages(evs, err), "rate_limits": snapshot, "mcp_catalogs": catalogs(err), "foreign_items": foreign(evs)}
     (run_dir / "attempt.json").write_text(json.dumps(record, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     return record

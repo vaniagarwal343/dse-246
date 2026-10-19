@@ -146,6 +146,7 @@ def source_lines(window, end, source_rows, wb_url, snapshot):
 def report(started, digest, model, block_b, window, end, source_rows, wb_url, snapshot, arm_rows, probes):
     """Write pipeline/smoke_report.md and return whether the smoke test passed."""
     broken = [r["arm"] for r in arm_rows if r["error"] or r["rec"]["returncode"] != 0 or r["rec"]["web_search_events"]
+              or r["rec"].get("mcp_catalogs") != [("configured", 2)] or r["rec"].get("foreign_items")
               or not any(c.get("ok") for c in r["calls"]) or r["answer"] is None]
     leaky = [name for name, v in probes.items() if not v["pass"]]
     problems = [f"arms failed: {', '.join(broken)}"] * bool(broken) + [f"sandbox reached the network: {', '.join(leaky)}"] * bool(leaky)
@@ -162,16 +163,18 @@ def report(started, digest, model, block_b, window, end, source_rows, wb_url, sn
         lines += ["Block B is deferred (CONFIG.md §1 `DEFERRED`), so this run pulls no seed records and submits nothing to Wayback.", ""]
     lines += [
         "## Study arms: MODEL_UNDER_TEST in the Codex CLI", "",
-        f"Model `{model}` in `{codex_arm.CODEX_VERSION}`, one attempt per arm on the owner's ChatGPT login. The CLI's only web path is "
-        "the arm's MCP tools (`harness/mcp_search.py`), whose backend calls go through `harness/net.py`. "
+        f"Model `{model}` in `{codex_arm.CODEX_VERSION}`, one attempt per arm on the owner's ChatGPT login, with Codex's extra features off "
+        f"({', '.join(codex_arm.FEATURES_OFF)}). The CLI's only web path is the arm's MCP tools (`harness/mcp_search.py`), whose backend "
+        "calls go through `harness/net.py`; the catalog column is what Codex logged it built. "
         f"Throwaway question: \"{QUESTION}\" Expected answer: {EXPECTED}.", "",
-        "| Arm | Backend | Tool calls | Codex web_search events | Answer | Input / output tokens | Result |",
-        "|---|---|---|---|---|---|---|",
+        "| Arm | Backend | Tool calls | MCP catalogs Codex built | Items outside the arm's tools | Answer | Input / output tokens | Result |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in arm_rows:
         rec, u = r["rec"], r["rec"].get("usage") or {}
-        result = r["error"] or ("ok" if r["arm"] not in broken else f"exit {rec['returncode']}, no successful tool call, a Codex web search or no answer")
-        lines.append(f"| {r['arm']} | {BACKENDS[r['arm']]} | {calls_text(r['calls'])} | {rec['web_search_events']} | "
+        result = r["error"] or ("ok" if r["arm"] not in broken else f"exit {rec['returncode']}, another tool catalog or item, no successful tool call or no answer")
+        cats = ", ".join(f"{kind} ({n} tools)" for kind, n in rec.get("mcp_catalogs") or []) or "none logged"
+        lines.append(f"| {r['arm']} | {BACKENDS[r['arm']]} | {calls_text(r['calls'])} | {cats} | {len(rec.get('foreign_items') or []) + rec['web_search_events']} | "
                      f"{r['answer'] if r['answer'] is not None else 'no <answer> tag'} | {u.get('input_tokens', '–')} / {u.get('output_tokens', '–')} | {result} |")
     lines += ["", "## Sandbox network isolation", "",
               "Each probe ran under `codex sandbox -P :read-only` with the arms' config.toml, and passes when it cannot reach the network.", "",
