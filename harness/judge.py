@@ -61,6 +61,7 @@ def jev(client, question, gold, answer, *, purpose):
     if data.get("model") != JEV_MODEL or choice.get("choice") not in ("correct", "incorrect"):
         raise JudgeError(f"jev: unexpected response (model {data.get('model')!r}, choice {choice.get('choice')!r})")
     return {"model": JEV_MODEL, "verdict": choice["choice"], "confidence": choice.get("confidence"), "prompt_sha256": digest,
+            "output": {"choice": choice["choice"], "probabilities": choice.get("probabilities"), "confidence": choice.get("confidence")},
             "usage": data.get("usage")}
 
 
@@ -81,7 +82,7 @@ def perplexity(client, question, gold, answer, *, purpose):
     found = VERDICT_RE.findall(text)
     if not found:
         raise JudgeError("perplexity: no <verdict> tag in the reply")
-    return {"model": PERPLEXITY_MODEL, "verdict": found[-1].lower(), "prompt_sha256": digest, "usage": data.get("usage")}
+    return {"model": PERPLEXITY_MODEL, "verdict": found[-1].lower(), "prompt_sha256": digest, "output": text, "usage": data.get("usage")}
 
 
 JUDGES = {JEV_MODEL: jev, PERPLEXITY_MODEL: perplexity}

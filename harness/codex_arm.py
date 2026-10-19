@@ -8,6 +8,7 @@ login copy included, is deleted after the attempt; the event stream, stderr and 
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ CODEX_VERSION = "codex-cli 0.162.1"
 TIMEOUT = 3600
 AUTH = Path.home() / ".codex" / "auth.json"
 UNSET = ("OPENAI_API_KEY", "CODEX_API_KEY")
+LIMIT_RE = re.compile(r"rate.?limit|usage limit|too many requests|\b429\b|quota|credits", re.I)
 CONFIG_TOML = """model = "{model}"
 model_reasoning_effort = "{effort}"
 approval_policy = "never"
@@ -67,6 +69,38 @@ def events(stdout):
     return out
 
 
+def rate_limits(home_dir):
+    """The last rate-limit snapshot (plan window used, credits balance) in the attempt's session log, or None."""
+    snap = None
+    for path in sorted(home_dir.rglob("*.jsonl")):
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if '"rate_limits"' not in line:
+                continue
+            try:
+                found = [f for f in find_key(json.loads(line), "rate_limits") if f]
+            except ValueError:
+                continue
+            snap = found[-1] if found else snap
+    return snap
+
+
+def find_key(obj, key):
+    if isinstance(obj, dict):
+        if key in obj:
+            yield obj[key]
+        for v in obj.values():
+            yield from find_key(v, key)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from find_key(v, key)
+
+
+def limit_messages(evs, err):
+    """Error events and stderr lines that mention a rate limit, usage limit or quota."""
+    texts = [json.dumps(e) for e in evs if e.get("type") in ("error", "turn.failed")] + (err or "").splitlines()
+    return [env.scrub(t)[:300] for t in texts if LIMIT_RE.search(t)]
+
+
 def run(arm, prompt, run_dir, purpose, timeout=TIMEOUT):
     """One attempt: returns the run record, with the final message in "final_text"."""
     if version() != CODEX_VERSION:
@@ -92,6 +126,7 @@ def run(arm, prompt, run_dir, purpose, timeout=TIMEOUT):
             rc, timed_out = None, True
         last = work / "last_message.txt"
         final = last.read_text(encoding="utf-8") if rc == 0 and last.exists() else ""
+        snapshot = rate_limits(work / "codex-home")
     finally:
         shutil.rmtree(work, ignore_errors=True)
     evs = events(out)
@@ -106,6 +141,8 @@ def run(arm, prompt, run_dir, purpose, timeout=TIMEOUT):
               "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(), "returncode": rc, "timed_out": timed_out,
               "elapsed_s": round(time.monotonic() - started, 1), "final_text": final, "usage": usage,
               "tool_calls": sum(1 for c in calls if "n" in c), "refused_calls": sum(1 for c in calls if c.get("refused")),
-              "web_search_events": sum(1 for e in evs if "web_search" in json.dumps(e))}
+              "web_search_events": sum(1 for e in evs if "web_search" in json.dumps(e)),
+              "errors": [env.scrub(json.dumps(e))[:300] for e in evs if e.get("type") in ("error", "turn.failed")],
+              "limit_messages": limit_messages(evs, err), "rate_limits": snapshot}
     (run_dir / "attempt.json").write_text(json.dumps(record, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     return record

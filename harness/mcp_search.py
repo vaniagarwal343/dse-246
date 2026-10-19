@@ -21,13 +21,43 @@ from pipeline import config, env, net  # noqa: E402
 
 PROTOCOL_VERSION = "2025-06-18"
 FORCED = "No more tool calls: {why}. Give your final answer now, in the format the question asks for."
+BLOCKED = "BLOCKED_KEY_DOMAIN"
+UNAVAILABLE = "This URL is not available."
 # NOTE(vani): the CLI reports token usage once per run, not per request, so the server estimates the next model input: the CLI's
-# own instructions and tool definitions (BASE_TOKENS, from the smoke test: 61,211 input tokens over the exa run's two requests),
-# a token per three characters of the prompt and of every tool argument and result so far, and CALL_ALLOWANCE per call for
-# the model's own reasoning and messages.
-BASE_TOKENS = 30_000
+# own instructions and tool definitions (BASE_TOKENS: a request with no tool call carried 11,869 to 11,872 input tokens on both
+# arms, 2026-10-19), a token per three characters of the prompt and of every tool argument and result so far, and CALL_ALLOWANCE
+# per call for the model's own reasoning and messages.
+BASE_TOKENS = 12_000
 CALL_ALLOWANCE = 1000
 TOOLS = [{"name": t["name"], "description": t["description"], "inputSchema": t["parameters"]} for t in (arms.SEARCH_TOOL, arms.FETCH_TOOL)]
+
+
+class Blocked(Exception):
+    """A URL on harness/arms.py's BLOCKLIST; the message is the rule."""
+
+
+def drop_blocked(payload, meta):
+    """Search results without blocklisted URLs, their backend lengths kept aligned, and one BLOCKED_KEY_DOMAIN row per dropped result."""
+    backend = meta.get("backend_chars") or [None] * len(payload)
+    rules = [arms.blocked(r["url"]) for r in payload]
+    dropped = [{"code": BLOCKED, "rule": rule, "url": r["url"], "title": r["title"]} for r, rule in zip(payload, rules) if rule]
+    meta = {**meta, "backend_chars": [b for b, rule in zip(backend, rules) if not rule], "blocked": dropped}
+    return [r for r, rule in zip(payload, rules) if not rule], meta
+
+
+def trace(name, args, payload, meta, error):
+    """The trace fields of one call: every search result as returned with its lengths, or the fetch's status, lengths and truncation."""
+    extra = {k: meta[k] for k in ("cost_dollars", "request_id", "query_sent", "blocked") if meta.get(k)}
+    if name == "search":
+        rows = payload or []
+        backend = meta.get("backend_chars") or [None] * len(rows)
+        return {**extra, "results": [{"url": r["url"], "title": r["title"], "text": r["text"], "returned_chars": len(r["text"]), "backend_chars": b}
+                                     for r, b in zip(rows, backend)]}
+    page = payload or {}
+    status = meta.get("status") or (BLOCKED if (error or "").startswith(BLOCKED) else "error" if error else None)
+    return {**extra, "fetch": {"url": page.get("url") or args.get("url"), "title": page.get("title"), "status": status, "source": meta.get("source"),
+                               "error": meta.get("error") or error, "returned_chars": len(page.get("text") or ""),
+                               "backend_chars": meta.get("backend_chars"), "truncated": meta.get("truncated")}}
 
 
 class Server:
@@ -63,14 +93,22 @@ class Server:
         try:
             if name not in ("search", "fetch") or self.backend is None:
                 raise ValueError(f"unknown tool {name}")
-            result = self.backend[name](self.client, args, f"{self.purpose}:{name}")
-            text, ok, error = json.dumps(result, ensure_ascii=False), True, None
+            if name == "fetch" and arms.blocked(args.get("url")):
+                raise Blocked(arms.blocked(args.get("url")))
+            payload, meta = self.backend[name](self.client, args, f"{self.purpose}:{name}")
+            if name == "search":
+                payload, meta = drop_blocked(payload, meta)
+            elif arms.blocked(payload.get("url")):
+                raise Blocked(arms.blocked(payload.get("url")))
+            text, ok, error = json.dumps(payload, ensure_ascii=False), True, None
+        except Blocked as exc:  # NOTE(vani): the model is told only that the page is unavailable; the trace keeps the rule.
+            text, ok, error, payload, meta = json.dumps({"error": UNAVAILABLE}), False, f"{BLOCKED}: {exc}", None, {}
         except Exception as exc:  # NOTE(vani): a failed backend call goes back to the model as that tool's output, and is logged.
             error = env.scrub(f"{type(exc).__name__}: {exc}")[:300]
-            text, ok, result = json.dumps({"error": error}), False, None
+            text, ok, payload, meta = json.dumps({"error": error}), False, None, {}
         self.chars += len(json.dumps(args, ensure_ascii=False)) + len(text)
         self.log({**rec, "n": self.calls, "ok": ok, "error": error, "elapsed_ms": round(1000 * (time.monotonic() - started)),
-                  "results": len(result) if isinstance(result, list) else int(ok), "result": result})
+                  "returned_chars": len(text), **trace(name, args, payload, meta, error)})
         return {"content": [{"type": "text", "text": text}], "isError": not ok}
 
     def handle(self, msg):
