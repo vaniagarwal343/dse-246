@@ -1,0 +1,420 @@
+{
+  "benchmark": "DSE-246",
+  "scoring": "reviewed answer key",
+  "updated": "2026-10-20",
+  "configHash": "fe8cd27b36d3fb4e51123b1fb653b915078d45689c8e8077cddc21882502d2fd",
+  "resultsCodeCommit": "751a020c024eada6b9b721b47fb251ef6776f008",
+  "bootstrapSamples": 10000,
+  "bootstrapSeed": 20261018,
+  "decisionThresholdPoints": 12,
+  "firstCompletedAt": "2026-10-19T19:35:26Z",
+  "lastCompletedAt": "2026-10-20T07:40:33Z",
+  "interleavingMedianMinutes": 3,
+  "interleavingMaxMinutes": 16,
+  "blocks": {
+    "A1": {
+      "items": 125,
+      "attemptsPerArm": 250,
+      "correct": {
+        "exa": 141,
+        "deepseek": 98
+      },
+      "accuracy": {
+        "exa": 0.564,
+        "deepseek": 0.392
+      },
+      "passAtTwo": {
+        "exa": 0.624,
+        "deepseek": 0.48
+      },
+      "halfCorrectRate": {
+        "exa": 0.12,
+        "deepseek": 0.176
+      },
+      "bothCorrect": {
+        "exa": 63,
+        "deepseek": 38
+      },
+      "gapPoints": 17.2,
+      "gapCi95": [
+        9.6,
+        24.8
+      ],
+      "verdict": "Exa ahead"
+    },
+    "A2": {
+      "items": 121,
+      "attemptsPerArm": 242,
+      "correct": {
+        "exa": 156,
+        "deepseek": 136
+      },
+      "accuracy": {
+        "exa": 0.6446280991735537,
+        "deepseek": 0.5619834710743802
+      },
+      "passAtTwo": {
+        "exa": 0.6942148760330579,
+        "deepseek": 0.6033057851239669
+      },
+      "halfCorrectRate": {
+        "exa": 0.09917355371900827,
+        "deepseek": 0.08264462809917356
+      },
+      "bothCorrect": {
+        "exa": 72,
+        "deepseek": 63
+      },
+      "gapPoints": 8.3,
+      "gapCi95": [
+        3.7,
+        13.2
+      ],
+      "verdict": "Inconclusive"
+    }
+  },
+  "pooled": {
+    "items": 246,
+    "descriptiveOnly": true,
+    "correct": {
+      "exa": 297,
+      "deepseek": 234
+    },
+    "accuracy": {
+      "exa": 0.6036585365853658,
+      "deepseek": 0.47560975609756095
+    }
+  },
+  "operations": {
+    "exa": {
+      "attempts": 492,
+      "completed": 492,
+      "retried": 1,
+      "timeouts": 0,
+      "noAnswerLine": 0,
+      "capHitAttempts": 74,
+      "ceilingHitAttempts": 0,
+      "searches": 10568,
+      "fetches": 2040,
+      "fetchFailures": 56,
+      "fetchFailureRate": 0.027450980392156862,
+      "successfulSearches": 10568,
+      "successfulFetches": 1985,
+      "totalCalls": 12608,
+      "isolatedAttempts": 492,
+      "medianSeconds": 87,
+      "modelUsd": 462.012858,
+      "toolsUsd": 75.961,
+      "totalUsd": 537.973858,
+      "meanToolCostUsd": 0.15439227642276424,
+      "meanTotalCostUsd": 1.093442800813008,
+      "costPerCorrectUsd": 1.811359791245791,
+      "inputTokens": 205990852,
+      "cachedInputTokens": 182816768,
+      "outputTokens": 949105,
+      "reasoningTokens": 353938,
+      "largestRequestInputTokens": 194744
+    },
+    "deepseek": {
+      "attempts": 492,
+      "completed": 492,
+      "retried": 3,
+      "timeouts": 0,
+      "noAnswerLine": 0,
+      "capHitAttempts": 133,
+      "ceilingHitAttempts": 0,
+      "searches": 14626,
+      "fetches": 2389,
+      "fetchFailures": 576,
+      "fetchFailureRate": 0.2411050648807032,
+      "successfulSearches": 14626,
+      "successfulFetches": 1813,
+      "totalCalls": 17015,
+      "isolatedAttempts": 492,
+      "medianSeconds": 164,
+      "modelUsd": 791.237448,
+      "toolsUsd": 12.32925,
+      "totalUsd": 803.566698,
+      "meanToolCostUsd": 0.025059451219512197,
+      "meanTotalCostUsd": 1.6332656463414634,
+      "costPerCorrectUsd": 3.434045717948718,
+      "inputTokens": 408154055,
+      "cachedInputTokens": 372556928,
+      "outputTokens": 1254185,
+      "reasoningTokens": 498424,
+      "largestRequestInputTokens": 174058
+    }
+  },
+  "operationsByBlock": {
+    "A1": {
+      "exa": {
+        "attempts": 250,
+        "completed": 250,
+        "retried": 0,
+        "timeouts": 0,
+        "noAnswerLine": 0,
+        "capHitAttempts": 56,
+        "ceilingHitAttempts": 0,
+        "searches": 6846,
+        "fetches": 857,
+        "fetchFailures": 32,
+        "fetchFailureRate": 0.03733955659276546,
+        "successfulSearches": 6846,
+        "successfulFetches": 826,
+        "totalCalls": 7703,
+        "isolatedAttempts": 250,
+        "medianSeconds": 125,
+        "modelUsd": 297.519382,
+        "toolsUsd": 48.748,
+        "totalUsd": 346.267382,
+        "meanToolCostUsd": 0.194992,
+        "meanTotalCostUsd": 1.385069528,
+        "costPerCorrectUsd": 2.455797035460993,
+        "inputTokens": 136467837,
+        "cachedInputTokens": 122213632,
+        "outputTokens": 655274,
+        "reasoningTokens": 314580,
+        "largestRequestInputTokens": 194744
+      },
+      "deepseek": {
+        "attempts": 250,
+        "completed": 250,
+        "retried": 3,
+        "timeouts": 0,
+        "noAnswerLine": 0,
+        "capHitAttempts": 102,
+        "ceilingHitAttempts": 0,
+        "searches": 9706,
+        "fetches": 929,
+        "fetchFailures": 148,
+        "fetchFailureRate": 0.15931108719052745,
+        "successfulSearches": 9706,
+        "successfulFetches": 781,
+        "totalCalls": 10635,
+        "isolatedAttempts": 250,
+        "medianSeconds": 189,
+        "modelUsd": 517.412456,
+        "toolsUsd": 7.86525,
+        "totalUsd": 525.277706,
+        "meanToolCostUsd": 0.031460999999999996,
+        "meanTotalCostUsd": 2.101110824,
+        "costPerCorrectUsd": 5.359976591836734,
+        "inputTokens": 267910624,
+        "cachedInputTokens": 245016576,
+        "outputTokens": 869108,
+        "reasoningTokens": 437704,
+        "largestRequestInputTokens": 174058
+      }
+    },
+    "A2": {
+      "exa": {
+        "attempts": 242,
+        "completed": 242,
+        "retried": 1,
+        "timeouts": 0,
+        "noAnswerLine": 0,
+        "capHitAttempts": 18,
+        "ceilingHitAttempts": 0,
+        "searches": 3722,
+        "fetches": 1183,
+        "fetchFailures": 24,
+        "fetchFailureRate": 0.02028740490278952,
+        "successfulSearches": 3722,
+        "successfulFetches": 1159,
+        "totalCalls": 4905,
+        "isolatedAttempts": 242,
+        "medianSeconds": 64,
+        "modelUsd": 164.493476,
+        "toolsUsd": 27.213,
+        "totalUsd": 191.706476,
+        "meanToolCostUsd": 0.1124504132231405,
+        "meanTotalCostUsd": 0.792175520661157,
+        "costPerCorrectUsd": 1.2288876666666668,
+        "inputTokens": 69523015,
+        "cachedInputTokens": 60603136,
+        "outputTokens": 293831,
+        "reasoningTokens": 39358,
+        "largestRequestInputTokens": 105168
+      },
+      "deepseek": {
+        "attempts": 242,
+        "completed": 242,
+        "retried": 0,
+        "timeouts": 0,
+        "noAnswerLine": 0,
+        "capHitAttempts": 31,
+        "ceilingHitAttempts": 0,
+        "searches": 4920,
+        "fetches": 1460,
+        "fetchFailures": 428,
+        "fetchFailureRate": 0.29315068493150687,
+        "successfulSearches": 4920,
+        "successfulFetches": 1032,
+        "totalCalls": 6380,
+        "isolatedAttempts": 242,
+        "medianSeconds": 131,
+        "modelUsd": 273.824992,
+        "toolsUsd": 4.464,
+        "totalUsd": 278.288992,
+        "meanToolCostUsd": 0.01844628099173554,
+        "meanTotalCostUsd": 1.1499545123966943,
+        "costPerCorrectUsd": 2.046242588235294,
+        "inputTokens": 140243431,
+        "cachedInputTokens": 127540352,
+        "outputTokens": 385077,
+        "reasoningTokens": 60720,
+        "largestRequestInputTokens": 123567
+      }
+    }
+  },
+  "pilotSensitivity": {
+    "removedTaskIds": [
+      "A1-008",
+      "A1-010",
+      "A1-015",
+      "A1-022",
+      "A1-024",
+      "A1-029",
+      "A1-030",
+      "A1-032",
+      "A1-040",
+      "A1-042"
+    ],
+    "blocks": {
+      "A1": {
+        "items": 115,
+        "attemptsPerArm": 230,
+        "correct": {
+          "exa": 132,
+          "deepseek": 89
+        },
+        "accuracy": {
+          "exa": 0.5739130434782609,
+          "deepseek": 0.3869565217391304
+        },
+        "passAtTwo": {
+          "exa": 0.6347826086956522,
+          "deepseek": 0.46956521739130436
+        },
+        "halfCorrectRate": {
+          "exa": 0.12173913043478261,
+          "deepseek": 0.16521739130434782
+        },
+        "bothCorrect": {
+          "exa": 59,
+          "deepseek": 35
+        },
+        "gapPoints": 18.7,
+        "gapCi95": [
+          10.9,
+          27.0
+        ],
+        "verdict": "Exa ahead"
+      },
+      "A2": {
+        "items": 121,
+        "attemptsPerArm": 242,
+        "correct": {
+          "exa": 156,
+          "deepseek": 136
+        },
+        "accuracy": {
+          "exa": 0.6446280991735537,
+          "deepseek": 0.5619834710743802
+        },
+        "passAtTwo": {
+          "exa": 0.6942148760330579,
+          "deepseek": 0.6033057851239669
+        },
+        "halfCorrectRate": {
+          "exa": 0.09917355371900827,
+          "deepseek": 0.08264462809917356
+        },
+        "bothCorrect": {
+          "exa": 72,
+          "deepseek": 63
+        },
+        "gapPoints": 8.3,
+        "gapCi95": [
+          3.7,
+          13.2
+        ],
+        "verdict": "Inconclusive"
+      }
+    },
+    "operations": {
+      "exa": {
+        "attempts": 472,
+        "completed": 472,
+        "retried": 1,
+        "timeouts": 0,
+        "noAnswerLine": 0,
+        "capHitAttempts": 69,
+        "ceilingHitAttempts": 0,
+        "searches": 9990,
+        "fetches": 1991,
+        "fetchFailures": 55,
+        "fetchFailureRate": 0.027624309392265192,
+        "successfulSearches": 9990,
+        "successfulFetches": 1936,
+        "totalCalls": 11981,
+        "isolatedAttempts": 472,
+        "medianSeconds": 86,
+        "modelUsd": 437.498602,
+        "toolsUsd": 71.866,
+        "totalUsd": 509.364602,
+        "meanToolCostUsd": 0.15225847457627117,
+        "meanTotalCostUsd": 1.0791622923728814,
+        "costPerCorrectUsd": 1.7686270902777776,
+        "inputTokens": 194491521,
+        "cachedInputTokens": 172547712,
+        "outputTokens": 910256,
+        "reasoningTokens": 342436,
+        "largestRequestInputTokens": 187357
+      },
+      "deepseek": {
+        "attempts": 472,
+        "completed": 472,
+        "retried": 3,
+        "timeouts": 0,
+        "noAnswerLine": 0,
+        "capHitAttempts": 128,
+        "ceilingHitAttempts": 0,
+        "searches": 13913,
+        "fetches": 2332,
+        "fetchFailures": 563,
+        "fetchFailureRate": 0.24142367066895368,
+        "successfulSearches": 13913,
+        "successfulFetches": 1769,
+        "totalCalls": 16245,
+        "isolatedAttempts": 472,
+        "medianSeconds": 164,
+        "modelUsd": 752.760134,
+        "toolsUsd": 11.7615,
+        "totalUsd": 764.521634,
+        "meanToolCostUsd": 0.02491843220338983,
+        "meanTotalCostUsd": 1.619749224576271,
+        "costPerCorrectUsd": 3.3978739288888886,
+        "inputTokens": 388103354,
+        "cachedInputTokens": 354253184,
+        "outputTokens": 1200105,
+        "reasoningTokens": 476375,
+        "largestRequestInputTokens": 163218
+      }
+    }
+  },
+  "review": {
+    "changedAttemptGrades": 104,
+    "changedByBlock": {
+      "A1": {
+        "exa": 10,
+        "deepseek": 8
+      },
+      "A2": {
+        "exa": 43,
+        "deepseek": 43
+      }
+    },
+    "calibrationComplete": false
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "benchmark": "DSE-246",
+  "snapshotDate": "2026-10-20",
+  "scoring": "reviewed answer key",
+  "publicationStatus": "reviewed-results snapshot; audit items pending",
+  "sha256": {
+    "CONFIG.md": "516a5b357c6775d3b80041743ffa08f95893a841e19d094308a5ecebd22426a3",
+    "PROTOCOL.md": "a17a2d9744919b68ad97094850bb7634a4384e6b743ddd6adeb2bcf7065342ff",
+    "TASKS.md": "41815550ad7062bd6b164efb8e8bff2ba33c111adbddaf0f44b41c52f57b9e03",
+    "README.md": "ace2078ac445948faf6d1124c6f723fd6c78af983fd878b8c8ed8627a9285177",
+    "REPORT.md": "ee6a7da006a60e80e3eb111c5dbbe7b2606b5bb9aa5c6153dc4e768b50f45592",
+    "ACCOUNTING.md": "20d128996de512edcad9c29eb9cc5e9546cdcc7184622cec414e1afb3f526472",
+    "amendments/2026-10-20-01.md": "65f1cd3c44dad08e93949a79b9edbb287196a258345dde6a3a6c5cbdc55159a2",
+    "scripts/results.py": "4e4400c8d47e977f5e960092409ca328891bbc535aa8e5a7fa41f626bfe65bdc",
+    "published/reviewed-scores.json": "a2b13c67d56ec333600eb74e276f79ef8dfb3b7e687dfb84faf63f7f7e41fed9",
+    "published/attempts.jsonl": "8df2a391dc83dbbdb386e3b60e37ac81e040c45da09c477d0ed6af4f47988f7e",
+    "published/summary.json": "1562d1dff5491d5d373a1e9b352d2cf9ed62787bc4842ce7630a48b9e91b0da1"
+  }
+}
